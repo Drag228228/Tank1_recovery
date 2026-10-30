@@ -105,6 +105,15 @@ jobs:
           mkdir -p release
           NAME="OrangeFox-${{ inputs.fox_branch }}-TANK_1-vendor_boot-$(date +%Y%m%d)-${{ github.run_number }}.img"
           python3 tree/tools/vendor_boot_tool.py inject stock_vendor_boot.img "$OUT/vendor_boot.img" "release/$NAME"
+          # stock-like AVB footer (stock vendor_boot carries an unsigned hash footer; the real
+          # hash lives in vbmeta, which we never touch -> orange state on unlocked bootloader)
+          AVB="$FOX/external/avb/avbtool.py"
+          info=$(python3 "$AVB" info_image --image stock_vendor_boot.img)
+          salt=$(echo "$info" | awk '/Salt:/{print $2; exit}')
+          mapfile -t props < <(echo "$info" | sed -n "s/^ *Prop: \(.*\) -> '\(.*\)'$/\1:\2/p")
+          args=(); for p in "${props[@]}"; do args+=(--prop "$p"); done
+          python3 "$AVB" add_hash_footer --image "release/$NAME" --partition_size 68157440 --partition_name vendor_boot --salt "$salt" "${args[@]}"
+          python3 "$AVB" info_image --image "release/$NAME" | head -20
           echo "== final image"; python3 tree/tools/vendor_boot_tool.py info "release/$NAME"
           (cd release && sha256sum "$NAME" > "$NAME.sha256")
           echo "IMG_NAME=$NAME" >> "$GITHUB_ENV"
