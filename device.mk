@@ -46,3 +46,8 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.crypto.uses_fs_ioc_add_encryption_key=true \
     ro.hardware.keystore=trustkernel \
     ro.hardware.gatekeeper=trustkernel
+
+# Prebuilt stock kernel -> $(PRODUCT_OUT)/kernel (needed by mkbootimg / vintf checks;
+# the flashed image keeps the stock kernel anyway)
+PRODUCT_COPY_FILES += $(LOCAL_PATH)/prebuilt/Image.gz:kernel
+PRODUCT_OTA_ENFORCE_VINTF_KERNEL_REQUIREMENTS := false
