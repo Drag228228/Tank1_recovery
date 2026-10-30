@@ -30,9 +30,14 @@ jobs:
 
       - name: Free disk space
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/logs"
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           sudo docker image prune -af || true
           sudo mkdir -p "$FOX" && sudo chown -R "$USER":"$USER" "$FOX"
+          # extra swap for linking
+          sudo swapoff -a || true
+          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          free -h
           df -h / /mnt
 
       - name: Install build dependencies
@@ -50,10 +55,11 @@ jobs:
 
       - name: Sync OrangeFox ${{ inputs.fox_branch }}
         run: |
-          cd /mnt
+          set -o pipefail
+          cd "$HOME"
           git clone https://gitlab.com/OrangeFox/sync.git fox_sync
           cd fox_sync
-          ./orangefox_sync.sh --branch "${{ inputs.fox_branch }}" --path "$FOX"
+          ./orangefox_sync.sh --branch "${{ inputs.fox_branch }}" --path "$FOX" 2>&1 | tee "$GITHUB_WORKSPACE/logs/sync.log"
           df -h /mnt
 
       - name: Place device tree
@@ -71,7 +77,7 @@ jobs:
           export FOX_BUILD_DEVICE="$DEVICE"
           export LC_ALL=C
           lunch "${{ inputs.lunch_target }}" || lunch twrp_TANK_1-eng
-          mka adbd vendorbootimage -j$(nproc --all) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          mka adbd vendorbootimage -j$(nproc --all) 2>&1 | tee "$GITHUB_WORKSPACE/logs/build.log"
           status=${PIPESTATUS[0]}
           ls -la "out/target/product/$DEVICE/" || true
           test "$status" -eq 0 && test -f "out/target/product/$DEVICE/vendor_boot.img"
@@ -99,9 +105,22 @@ jobs:
         with:
           name: debug-${{ github.run_number }}
           path: |
-            build.log
+            logs/
             debug/
           if-no-files-found: ignore
+
+      - name: Push logs to ci-logs branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          L="$GITHUB_WORKSPACE/logs"; mkdir -p "$L"
+          for f in "$L"/*.log; do [ -f "$f" ] || continue; grep -n -i -E "error|failed|fatal|cannot|not found|no such|undefined|missing" "$f" | tail -n 400 > "$f.errors" || true; tail -n 3000 "$f" > "$f.tail"; rm -f "$f"; done
+          df -h / /mnt > "$L/disk.txt" 2>&1 || true
+          echo "run ${{ github.run_number }} (${{ github.run_id }}) ref ${{ github.sha }}" > "$L/RUN.txt"
+          cd "$(mktemp -d)" && git init -q && cp -r "$L"/. . && git add -A && \
+            git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "logs for run ${{ github.run_number }}" && \
+            git push -fq "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/ci-logs
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
