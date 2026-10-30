@@ -128,7 +128,6 @@ BOARD_AVB_ENABLE := true
 # Security patch / version must match stock so KeyMint accepts key blobs.
 # Update together with the stock firmware version!
 PLATFORM_VERSION := 15
-PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
 PLATFORM_SECURITY_PATCH := 2025-08-05
 VENDOR_SECURITY_PATCH := 2025-08-05
 BOOT_SECURITY_PATCH := 2025-08-05

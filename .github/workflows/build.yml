@@ -31,12 +31,14 @@ jobs:
       - name: Free disk space
         run: |
           mkdir -p "$GITHUB_WORKSPACE/logs"
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" \
+            /opt/microsoft /opt/az /opt/google /usr/lib/google-cloud-sdk /usr/local/.ghcup /usr/share/swift /usr/local/lib/node_modules \
+            /usr/local/share/powershell /usr/local/share/chromium /usr/share/miniconda /usr/lib/mono /usr/local/julia* /opt/pipx || true
           sudo docker image prune -af || true
           sudo mkdir -p "$FOX" && sudo chown -R "$USER":"$USER" "$FOX"
           # extra swap for linking
           sudo swapoff -a || true
-          sudo fallocate -l 16G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          sudo fallocate -l 4G /mnt/swapfile && sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
           free -h
           df -h / /mnt
 
@@ -60,6 +62,10 @@ jobs:
           git clone https://gitlab.com/OrangeFox/sync.git fox_sync
           cd fox_sync
           ./orangefox_sync.sh --branch "${{ inputs.fox_branch }}" --path "$FOX" 2>&1 | tee "$GITHUB_WORKSPACE/logs/sync.log"
+          df -h /mnt
+          # git metadata is not needed for building; frees a lot of space
+          du -sh "$FOX/.repo" || true
+          rm -rf "$FOX/.repo"
           df -h /mnt
 
       - name: Place device tree
