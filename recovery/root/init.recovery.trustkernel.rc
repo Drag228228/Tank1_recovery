@@ -16,6 +16,14 @@ on fs
     mkdir /mnt/vendor/protect_f/tee 0770 system system
 
 on post-fs
+    # stock vendor ueventd.rc values; recovery's ueventd leaves the TEE nodes
+    # 0600 root:root (on BV7100 that made teed fail with Permission denied)
+    chown system system /dev/tkcore_admin
+    chmod 0600 /dev/tkcore_admin
+    chown root system /dev/tkcore_client
+    chmod 0660 /dev/tkcore_client
+    chown root system /dev/tkcore_fp
+    chmod 0660 /dev/tkcore_fp
     # /data is not decrypted yet: the TEE secure file system lives in RAM here,
     # the real keys are taken from RPMB / persist / protect_f.
     mkdir /data/vendor 0771 system system
