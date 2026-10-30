@@ -1,0 +1,120 @@
+name: Build OrangeFox (OSCAL TANK 1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      fox_branch:
+        description: 'OrangeFox branch'
+        required: true
+        default: '14.1'
+      lunch_target:
+        description: 'lunch target'
+        required: true
+        default: 'twrp_TANK_1-ap2a-eng'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      FOX: /mnt/fox
+      DEVICE: TANK_1
+    steps:
+      - name: Checkout device tree
+        uses: actions/checkout@v4
+        with:
+          path: tree
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          sudo docker image prune -af || true
+          sudo mkdir -p "$FOX" && sudo chown -R "$USER":"$USER" "$FOX"
+          df -h / /mnt
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git git-lfs gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev liblz4-tool lz4 \
+            libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip unzip zlib1g-dev python3 python-is-python3 xz-utils cpio
+          sudo curl -sSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          git config --global user.name "OrangeFox Builder"
+          git config --global user.email "builder@users.noreply.github.com"
+          git config --global color.ui false
+
+      - name: Sync OrangeFox ${{ inputs.fox_branch }}
+        run: |
+          cd /mnt
+          git clone https://gitlab.com/OrangeFox/sync.git fox_sync
+          cd fox_sync
+          ./orangefox_sync.sh --branch "${{ inputs.fox_branch }}" --path "$FOX"
+          df -h /mnt
+
+      - name: Place device tree
+        run: |
+          mkdir -p "$FOX/device/oscal"
+          rsync -a --exclude .git --exclude .github --exclude stock "$GITHUB_WORKSPACE/tree/" "$FOX/device/oscal/$DEVICE/"
+          ls -la "$FOX/device/oscal/$DEVICE"
+
+      - name: Build recovery
+        run: |
+          cd "$FOX"
+          set +e
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE="$DEVICE"
+          export LC_ALL=C
+          lunch "${{ inputs.lunch_target }}" || lunch twrp_TANK_1-eng
+          mka adbd vendorbootimage -j$(nproc --all) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          status=${PIPESTATUS[0]}
+          ls -la "out/target/product/$DEVICE/" || true
+          test "$status" -eq 0 && test -f "out/target/product/$DEVICE/vendor_boot.img"
+
+      - name: Inject recovery into STOCK vendor_boot
+        run: |
+          OUT="$FOX/out/target/product/$DEVICE"
+          xz -dc tree/stock/vendor_boot.img.xz > stock_vendor_boot.img
+          (cd . && sed 's#vendor_boot.img#stock_vendor_boot.img#' tree/stock/SHA256SUMS | sha256sum -c -)
+          echo "== built image"; python3 tree/tools/vendor_boot_tool.py info "$OUT/vendor_boot.img"
+          mkdir -p release
+          NAME="OrangeFox-${{ inputs.fox_branch }}-TANK_1-vendor_boot-$(date +%Y%m%d)-${{ github.run_number }}.img"
+          python3 tree/tools/vendor_boot_tool.py inject stock_vendor_boot.img "$OUT/vendor_boot.img" "release/$NAME"
+          echo "== final image"; python3 tree/tools/vendor_boot_tool.py info "release/$NAME"
+          (cd release && sha256sum "$NAME" > "$NAME.sha256")
+          echo "IMG_NAME=$NAME" >> "$GITHUB_ENV"
+          # keep the raw OrangeFox build output only for debugging (NOT for flashing)
+          mkdir -p debug
+          cp "$OUT/vendor_boot.img" debug/DO_NOT_FLASH_build_vendor_boot.img || true
+          cp "$OUT"/ramdisk-recovery.cpio debug/ 2>/dev/null || true
+
+      - name: Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_number }}
+          path: |
+            build.log
+            debug/
+          if-no-files-found: ignore
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: TANK_1-${{ github.run_number }}
+          name: OrangeFox ${{ inputs.fox_branch }} for OSCAL TANK 1 (build ${{ github.run_number }})
+          body: |
+            Flash ONLY the `*-vendor_boot-*.img` file:
+            ```
+            fastboot flash vendor_boot ${{ env.IMG_NAME }}
+            ```
+            It is the STOCK vendor_boot (V1.2.0.1_S250917) with only the recovery fragment replaced.
+            Normal Android boot is not affected. Do NOT touch vbmeta.
+            Rollback: flash stock vendor_boot from `stock/vendor_boot.img.xz` (unpack with `xz -d`).
+          files: |
+            release/*
