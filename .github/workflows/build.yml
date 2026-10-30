@@ -67,6 +67,8 @@ jobs:
           du -sh "$FOX/.repo" || true
           rm -rf "$FOX/.repo"
           df -h /mnt
+          echo "::warning title=disk after sync::$(df -h / | tail -1 | tr -s ' ')"
+          echo "::warning title=biggest dirs::$(du -sh "$FOX"/* 2>/dev/null | sort -rh | head -12 | tr '\n' ';')"
 
       - name: Place device tree
         run: |
@@ -77,16 +79,22 @@ jobs:
       - name: Build recovery
         run: |
           cd "$FOX"
+          ( warned=0; while true; do avail=$(df --output=avail -k / | tail -1); echo "$(date +%T) $(df -h / | tail -1 | tr -s ' ')" >> "$GITHUB_WORKSPACE/logs/disk_watch.log"; if [ "$avail" -lt 3000000 ] && [ $warned -eq 0 ]; then echo "::warning title=LOW DISK::$(date +%T) only $((avail/1024)) MB free"; warned=1; fi; sleep 20; done ) &
           set +e
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE="$DEVICE"
           export LC_ALL=C
           lunch "${{ inputs.lunch_target }}" || lunch twrp_TANK_1-eng
-          mka adbd vendorbootimage -j$(nproc --all) 2>&1 | tee "$GITHUB_WORKSPACE/logs/build.log"
-          status=${PIPESTATUS[0]}
+          mka adbd vendorbootimage -j$(( $(nproc --all) )) > "$GITHUB_WORKSPACE/logs/build.log" 2>&1
+          status=$?
           ls -la "out/target/product/$DEVICE/" || true
-          test "$status" -eq 0 && test -f "out/target/product/$DEVICE/vendor_boot.img"
+          echo "::warning title=disk after build::$(df -h / | tail -1 | tr -s ' ')"
+          if [ "$status" -ne 0 ] || [ ! -f "out/target/product/$DEVICE/vendor_boot.img" ]; then
+            msg=$( (grep -n -E "FAILED:|error:|Error |ninja: build stopped|No space|Killed" "$GITHUB_WORKSPACE/logs/build.log" | tail -n 40; echo ---; tail -n 40 "$GITHUB_WORKSPACE/logs/build.log") | sed 's/%/%25/g' | tr -d '\r' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=build failed (status $status)::$msg"
+            exit 1
+          fi
 
       - name: Inject recovery into STOCK vendor_boot
         run: |
