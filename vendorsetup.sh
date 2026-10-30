@@ -5,11 +5,11 @@
 FDEVICE="TANK_1"
 
 fox_get_target_device() {
-    local chkdev=$(echo "$BASH_SOURCE" | grep -w \"$FDEVICE\")
+    local chkdev=$(echo "$BASH_SOURCE" | grep -w "$FDEVICE")
     if [ -n "$chkdev" ]; then
         FOX_BUILD_DEVICE="$FDEVICE"
     else
-        chkdev=$(set | grep BASH_ARGV | grep -w \"$FDEVICE\")
+        chkdev=$(set | grep BASH_ARGV | grep -w "$FDEVICE")
         [ -n "$chkdev" ] && FOX_BUILD_DEVICE="$FDEVICE"
     fi
 }
@@ -71,5 +71,6 @@ if [ "$1" = "$FDEVICE" -o "$FOX_BUILD_DEVICE" = "$FDEVICE" ]; then
     # Misc
     export OF_QUICK_BACKUP_LIST="/boot;/init_boot;/vendor_boot;/dtbo;"
     export OF_USE_SYSTEM_FINGERPRINT=1
+    echo "OrangeFox vars for $FDEVICE loaded"
 
 fi
