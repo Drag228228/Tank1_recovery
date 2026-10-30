@@ -86,6 +86,7 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           source build/envsetup.sh
           source "device/oscal/$DEVICE/vendorsetup.sh" "$DEVICE"
+          eval "$(python3 "device/oscal/$DEVICE/tools/fox_vars_fix.py" bootable/recovery/orangefox.mk)"
           echo "::warning title=fox vars::FOX_VENDOR_BOOT_RECOVERY=$FOX_VENDOR_BOOT_RECOVERY FOX_VIRTUAL_AB_DEVICE=$FOX_VIRTUAL_AB_DEVICE OF_FLASHLIGHT_ENABLE=$OF_FLASHLIGHT_ENABLE"
           export LC_ALL=C
           lunch "${{ inputs.lunch_target }}" || lunch twrp_TANK_1-eng

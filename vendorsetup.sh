@@ -31,7 +31,7 @@ if [ "$1" = "$FDEVICE" -o "$FOX_BUILD_DEVICE" = "$FDEVICE" ]; then
     # Recovery lives in vendor_boot (header v4)
     export FOX_VENDOR_BOOT_RECOVERY=1
     export FOX_VIRTUAL_AB_DEVICE=1
-    export OF_AB_DEVICE=1
+    export FOX_AB_DEVICE=1
     export FOX_RECOVERY_INSTALL_PARTITION="/dev/block/by-name/vendor_boot"
     export FOX_RECOVERY_BOOT_PARTITION="/dev/block/by-name/boot"
     export OF_NO_TREBLE_COMPATIBILITY_CHECK=1
